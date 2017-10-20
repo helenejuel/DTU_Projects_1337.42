@@ -1,0 +1,337 @@
+# Load packages
+library(ggplot2)
+library(RColorBrewer)
+library(reshape2)
+library("plyr")
+library("cowplot")
+
+theme_set(theme_bw(base_size = 18))
+
+# Load the data
+# setwd("Q:\\Dropbox\\Uni\\Kandidat\\DTU Fall 2017\\02450 - Machine Learning\\Projects")
+# data<-read.csv("2017-09-22 VAC1506 data.csv",sep=",")
+# attributes<-read.csv("2017-09-22 VAC1506 data - attributes.csv",sep=",")
+setwd('C:/Users/HBJU/Documents/R/R/Machine learning/Projects')
+data <- read.delim("2017-09-22 VAC1506 data.txt", sep = "\t", header=T, stringsAsFactors=F)
+
+head(data) # check whether it is correctly loaded
+
+sum(is.na(data)) # 71 NAs in the data
+sum(is.na(data$Ocu.G.W33))/length(data$Ocu.G.W33) # 47% of ocular w33 measurements are NA
+data<-data[,-15] # remove Ocu.G.W33
+
+summary(data) # basic summary statistics for all
+summary(data)[,c(3,5,6,11,17-1,20-1,21-1)] # selected representative statistics
+
+d.names<-names(data)
+
+# View single
+IFU.data <- data[,1:4]
+IFU.long <- melt(IFU.data,id=c("Group","Animal"))
+
+ggplot(IFU.long)+geom_boxplot(aes(variable,value))
+
+# View all combinations
+# rename data before transformations so we can go back to the original
+ggdata <- data
+head(ggdata)
+
+ggSer <- melt(ggdata,id=d.names[-(6:10)]) # Serum IgG levels
+ggplot(ggSer)+geom_boxplot(aes(variable,value))
+
+ggOcu<-melt(ggdata,id=d.names[-(11:14)]) # Ocular IgG levels
+ggplot(ggOcu)+geom_boxplot(aes(variable,value))+labs(title="Figure 2 - Boxplots of Ocular IgG assays at different timepoints",
+                                                     x="Week of measurement",y="Ocular IgG level")
+
+ggNeu<-melt(ggdata,id=d.names[-(15:17)]) # Neutralizing assay
+ggplot(ggNeu)+geom_boxplot(aes(variable,value))
+
+ggAI<-melt(ggdata,id=d.names[-(18:19)]) # Antibody avidity
+ggplot(ggAI)+geom_boxplot(aes(variable,value))
+
+ggCD<-melt(ggdata,id=d.names[-(20:21)]) # T-cell types
+ggplot(ggCD)+geom_boxplot(aes(variable,value))
+
+# Clear
+ggplot(data)+geom_boxplot(aes(x=as.factor(data[,"Group"]),y=data[,"Clear"]))
+
+# Serum max to account for different schedule
+Ser.Max <- apply(ggdata[,6:10],1,max,na.rm=T)
+Ser.Base<-ggdata[,6]
+FC.Ser.Max<-Ser.Max/Ser.Base # FC from baseline
+# Ser.Max.Log<-log10(Ser.Max) # log to create normal distribution, not used
+logFC.Ser<-log10(FC.Ser.Max)
+
+Ser.data<-data.frame(Animal=1:30,Group=as.factor(ggdata$Group),logFC.Ser)
+
+ggplot(data=Ser.data)+geom_point(aes(x=Animal,y=logFC.Ser,color=Group),size=10)+
+                                   labs(title="Serum IgG antibody levels relative to baseline",
+                                        y="logFC Serum IgG levels relative to week 0",
+                                        x="Animal")
+
+# ocular log and FC
+Ocu.Max <- apply(ggdata[,11:14], 1, max, na.rm=T)
+Ocu.Base <- ggdata[,11]
+FC.Ocu.Max <- Ocu.Max/Ocu.Base
+# Ocu.Max.Log <- log10(Ocu.Max) # not used, do log after finding FC
+logFC.Ocu <- log10(FC.Ocu.Max)
+
+Ocu.data<-data.frame(Animal=1:30,Group=as.factor(ggdata$Group),logFC.Ocu)
+
+ggplot(data=Ocu.data)+geom_point(aes(x=Animal,y=logFC.Ocu,color=Group),size=10)+
+  labs(title="Ocular IgG antibody levels relative to baseline",
+       y="logFC Ocular IgG levels relative to week 0",
+       x="Animal")
+
+# Show both in one plot
+Combined.data<-data.frame(Ser.data,Ocu.data$logFC.Ocu)
+melted.max.ocu.ser<-melt(Combined.data,id=c("Group","Animal"))
+levels(melted.max.ocu.ser$variable)<-c("logFC Serum IgG","logFC Ocular IgG")
+
+ggplot(data=melted.max.ocu.ser)+geom_point(aes(x=Animal,y=value,color=Group),size=10)+
+  facet_wrap(~variable)+
+  labs(title="Figure 3 - Maximum IgG antibody levels relative to baseline",
+       y="log10 max IgG levels relative to week 0",
+       x="Animal")
+
+# Fold Change AI ----------------------------------------------------------
+FC.AI<-data[,19]/data[,18]
+plot(FC.AI)
+
+#Binary end points
+bin.clear<-data[,5]
+bin.clear[bin.clear<median(data[,5])]<-0
+bin.clear[bin.clear>median(data[,5])]<-1
+
+bin.IFU.D3<-data[,3]
+bin.IFU.D3[bin.IFU.D3<median(data[,3])]<-0
+bin.IFU.D3[bin.IFU.D3>median(data[,3])]<-1
+
+#Final data frame_________________________________________________________
+ggdata <- data
+ggdata <- cbind(ggdata, Ser.Max, FC.Ser.Max, Ocu.Max, FC.Ocu.Max, FC.AI, bin.clear, bin.IFU.D3)
+d.names <- names(ggdata)
+
+# Normality tests ---------------------------------------------------------
+graphics.off()
+par(mar=c(2,2,2,2),mfrow=c(5,6),oma=c(0,0,2,0))
+
+for(i in 1:dim(ggdata)[2]){
+  qqnorm(ggdata[,i],main=d.names[i])
+  qqline(ggdata[,i])
+}
+
+#log10 transform
+#ggdata[,3:15] <- log10(ggdata[,3:15]) # problem with 0 becomes -Inf
+
+# Substitute with the half of the lowest
+zero <- ggdata
+zero[zero==0]<-max(zero,na.rm=T) # make all 0 to max
+ggdata.min <- apply(zero,2,min,na.rm=T) # make a vector of the min (which is not 0)
+
+for(i in 1:(dim(ggdata)[2]-2)){
+  ggdata[,i][ggdata[,i]==0]<-ggdata.min[i]/2 # substitute all 0 with ? min for the specific column (except the last two binary clear and IFU)
+}
+
+ggdata[,3:14] <- log10(ggdata[,3:14]) # log10 transform clear, serum and ocular attributes
+ggdata[,20:26] <- log10(ggdata[,20:26]) #log10 transform CD and our own defined FC.Ser.Max/FC.Ocu.Max and FC.AI attributes
+
+# Normality tests with log10 data ------------------------------------------
+graphics.off()
+par(mar=c(2,2,2,2),mfrow=c(5,6),oma=c(0,0,2,0))
+
+for(i in 1:dim(ggdata)[2]){
+  qqnorm(ggdata[,i],main=d.names[i])
+  qqline(ggdata[,i])
+}
+
+mtext("Figure 4 - q-q plots of all our attributes",side=3,outer=T,adj=0,cex=1.5)
+
+# Shapiro test for normality
+Norm.test<-c()
+for(i in 1:dim(ggdata)[2]){
+  test<-shapiro.test(ggdata[,i])
+  Norm.test<-c(Norm.test,test$p.value)
+}
+names(Norm.test)<-d.names
+t1<-Norm.test>0.05 # The attributes where normality cannot be rejected
+# Many Ocu and Ser is not normal, try remove group 6 which skews the distribution
+
+# Remove control group and test for normality only for vaccination groups
+VG = subset(ggdata, Group!="6")
+for(i in 1:dim(ggdata)[2]){
+  qqnorm(VG[,i],main=d.names[i])
+  qqline(VG[,i])
+}
+
+Norm.test.no.control<-c()
+for(i in 1:dim(ggdata)[2]){
+  test<-shapiro.test(VG[,i])
+  Norm.test.no.control<-c(Norm.test.no.control,test$p.value)
+}
+names(Norm.test.no.control)<-d.names
+t2<-Norm.test.no.control>0.05 # The attributes where normality cannot be rejected
+t1==t2 # which were changed when control gorups were excluded?
+
+
+
+# Heatmap -----------------------------------------------------------------
+p1 <- c("IFU.D3", "bin.IFU.D3", "IFU.D7", "Clear", "bin.clear", "Ser.G.W0", "Ser.G.W10", "Ser.G.W18", "Ser.G.W22", "Ser.G.W33", "Ser.Max", "FC.Ser.Max", "Ocu.G.W0", "Ocu.G.W18", "Ocu.G.W20", "Ocu.G.W22", "Ocu.Max", "FC.Ocu.Max", "Neut.SvD.W24", "Neut.SvE.W24", "Neut.SvF.W24", "AI.W4", "AI.W24", "FC.AI", "CD4.W22", "CD8.W22")
+#Serum only
+p1 <- c("Ser.G.W0", "Ser.G.W10", "Ser.G.W18", "Ser.G.W22", "Ser.G.W33")
+# easier method to avoid writing column names
+names(ggdata)
+orderedData1 <- subset(ggdata, select=c(1:3, 25, 4:5, 26, 6, 19, 7:8, 20:21, 9:11, 22:23, 12:16, 24, 17:18)) 
+p1 <- names(orderedData1[,c(3:26)])
+
+#subgrouping
+VG = subset(ggdata, Group!="6")
+CTH = ggdata[ggdata$Group %in% c("1", "2", "3") , ]
+DNA = ggdata[ggdata$Group %in% c("4", "5") , ]
+  
+thecor<-round(cor(ggdata[,p1], method="spearman", use="pairwise.complete.obs"),2)
+thecor[lower.tri(thecor)]<-NA
+thecor
+thecor<-melt(thecor)
+thecor$Var1<-as.character(thecor$Var1)
+thecor$Var2<-as.character(thecor$Var2)
+thecor<-na.omit(thecor)
+head(thecor)
+
+ggplot(thecor, aes(Var2, Var1))+
+  geom_tile(data=thecor, aes(fill=value), color="white")+
+  scale_fill_gradient2(low="blue", high="red", mid="white", 
+                       midpoint=0, limit=c(-1,1), name="Correlation\n(Spearman)")+
+  theme(axis.text.x = element_text(angle=90, vjust=0.5, size=10, hjust=1), axis.text.y = element_text(size=10), axis.title = element_blank())+
+  ggtitle("All groups") +
+  ylim(p1) + xlim(p1) +
+  coord_equal()
+
+#graph individual correlations
+theme_set(theme_bw(base_size = 18))
+ggplot(data=VG, aes(x=Clear, y=Ocu.G.W22, label=Animal)) + 
+  geom_point(aes(color = Group), size=4) + 
+  geom_smooth(method=lm, color="black") + 
+  theme(legend.position="none")
+
+
+# PCA analysis ------------------------------------------------------------
+t(names(ggdata))
+
+subsetdata<-c(6:26)
+PCA.data<-ggdata[,subsetdata] # subset all non-endpoints
+
+# Standardization
+means<-colMeans(PCA.data,na.rm=T) # find means
+datzeromean<- t(apply(PCA.data,1,'-',means))
+colMeans(datzeromean,na.rm=T)
+variance<-apply(PCA.data,2,var,na.rm=T)
+standard.data<-datzeromean/variance
+standard.corrected.data<-standard.data
+
+for(i in 1:dim(standard.corrected.data)[2]){
+  standard.corrected.data[,i][is.na(standard.data[,i])]<-means[i]/variance[i] # substitute all NA with means/var for the specific column
+}
+
+# Use prcomp of the standardized corrected data
+pca.data<-prcomp(standard.corrected.data,center=F,scale.=F)
+summary(pca.data) # to view cumulative proportion of variance explained
+pca.data # to view principal component directions, copy pasted to notepad and saved as txt file
+# You cannot index the prcomp class?
+PC.Directions<-read.table("Prcomp.txt")
+PC.Directions[,1:4]
+
+qplot(x=1:21,y=summary(pca.data)$importance[3,],ylab="Cumulative variance explained",xlab="Number of PC included",
+      main="Figure 6 - Relation between cumulative proportion of variance explained and number of PC included")
+
+qplot(PC1,PC2,data=as.data.frame(pca.data$x)) # same plot as before
+
+Animal<-1:30
+endpoints<-ggdata[,27:28] # our previous transformation has made 0 to 0.5
+endpoints$bin.clear<-factor(endpoints$bin.clear) # 0 clear is good
+endpoints$bin.IFU.D3<-factor(endpoints$bin.IFU.D3) # 0 IFU is good
+
+plot.pca<-data.frame(pca.data$x,Animal,endpoints,Clear=ggdata$Clear,IFU.D3=ggdata$IFU.D3)
+
+# Try different combinations of PCs
+qplot(PC1,PC2,color=bin.clear,data=plot.pca)
+qplot(PC2,PC3,color=bin.clear,data=plot.pca)
+qplot(PC3,PC4,color=bin.clear,data=plot.pca)
+qplot(PC1,PC4,color=bin.clear,data=plot.pca)
+qplot(PC2,PC4,color=bin.clear,data=plot.pca)
+
+# Try one PC with one end point
+qplot(PC1,Clear,color=bin.IFU.D3,data=plot.pca)
+qplot(PC1,IFU.D3,data=plot.pca)
+
+# Try the other endpoint (bin.IFU.D3)
+qplot(PC1,PC2,color=bin.IFU.D3,data=plot.pca)
+qplot(PC2,PC3,color=bin.IFU.D3,data=plot.pca)
+qplot(PC3,PC4,color=bin.IFU.D3,data=plot.pca)
+
+# Label animal number to points
+qplot(PC1,PC2,data=plot.pca,geom=c("point","text"),vjust=(-1),label=Animal)
+qplot(PC3,PC4,data=plot.pca,geom=c("point","text"),vjust=(-1),label=Animal)
+qplot(PC5,PC6,data=plot.pca,geom=c("point","text"),vjust=(-1),label=Animal)
+
+# Make dual plots
+plot1<-ggplot(data=plot.pca)+geom_point(aes(x=PC1,y=PC2,color=bin.IFU.D3))+labs(color="Binary IFU D3")
+plot2<-ggplot(data=plot.pca)+geom_point(aes(x=PC1,y=PC2,color=bin.clear))+labs(color="Binary clearance")
+p<-plot_grid(plot1,plot2,align="h",labels=c("A","B"))
+title<-ggdraw()+draw_label("Figure 7 - PC1 versus PC2 for all continuous ratio attributes, excluding endpoints")
+plot_grid(title, p, ncol=1, rel_heights=c(0.1, 2)) # rel_heights values control title margins
+
+
+# For vaccine group only --------------------------------------------------
+
+subsetdata<-c(6:26)
+PCA.data<-VG[,subsetdata] # subset all non-endpoints
+
+# Standardization
+means<-colMeans(PCA.data,na.rm=T) # find means
+datzeromean<- t(apply(PCA.data,1,'-',means))
+colMeans(datzeromean,na.rm=T)
+variance<-apply(PCA.data,2,var,na.rm=T)
+standard.data<-datzeromean/variance
+standard.corrected.data<-standard.data
+
+for(i in 1:dim(standard.corrected.data)[2]){
+  standard.corrected.data[,i][is.na(standard.data[,i])]<-means[i]/variance[i] # substitute all NA with means/var for the specific column
+}
+
+# Use prcomp of the standardized corrected data
+pca.data<-prcomp(standard.corrected.data,center=F,scale.=F)
+summary(pca.data) # to view cumulative proportion of variance explained
+pca.data # to view principal component directions, copy pasted to notepad and saved as txt file
+# You cannot index the prcomp class?
+PC.Directions<-read.table("Prcomp.txt")
+PC.Directions[,1:4]
+
+qplot(x=1:21,y=summary(pca.data)$importance[3,],ylab="Cumulative variance explained",xlab="Number of PC included",
+      main="Figure 6 - Relation between cumulative proportion of variance explained and number of PC included")
+
+qplot(PC1,PC2,data=as.data.frame(pca.data$x)) # same plot as before
+
+Animal<-1:25
+endpoints<-VG[,27:28] # our previous transformation has made 0 to 0.5
+endpoints$bin.clear<-factor(endpoints$bin.clear) # 0 clear is good
+endpoints$bin.IFU.D3<-factor(endpoints$bin.IFU.D3) # 0 IFU is good
+
+plot.pca<-data.frame(pca.data$x,Animal,endpoints,Clear=VG$Clear,IFU.D3=VG$IFU.D3)
+
+# Try different combinations of PCs
+qplot(PC1,PC2,color=bin.clear,data=plot.pca)
+qplot(PC2,PC3,color=bin.clear,data=plot.pca)
+qplot(PC3,PC4,color=bin.clear,data=plot.pca)
+qplot(PC1,PC4,color=bin.clear,data=plot.pca)
+qplot(PC2,PC4,color=bin.clear,data=plot.pca)
+
+# Try one PC with one end point
+qplot(PC1,Clear,color=bin.IFU.D3,data=plot.pca)
+qplot(PC1,IFU.D3,data=plot.pca)
+
+# Try the other endpoint (bin.IFU.D3)
+qplot(PC1,PC2,color=bin.IFU.D3,data=plot.pca)
+qplot(PC2,PC3,color=bin.IFU.D3,data=plot.pca)
+qplot(PC3,PC4,color=bin.IFU.D3,data=plot.pca)
+
