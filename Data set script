@@ -1,0 +1,84 @@
+# Load the data
+rm(list=ls()) #clear environment
+# setwd("Q:\\Dropbox\\Uni\\Kandidat\\DTU Fall 2017\\02450 - Machine Learning\\Projects")
+# data<-read.csv("2017-09-22 VAC1506 data.csv",sep=",")
+# attributes<-read.csv("2017-09-22 VAC1506 data - attributes.csv",sep=",")
+setwd('C:/Users/HBJU/Documents/R/R/Machine learning/Projects')
+data <- read.delim("2017-09-22 VAC1506 data.txt", sep = "\t", header=T, stringsAsFactors=F)
+
+head(data) # check whether it is correctly loaded
+# d.names<-names(data)
+
+# rename data before transformations so we can go back to the original
+ggdata <- data
+
+# remove Ocu.G.W33
+ggdata<-ggdata[,-15] 
+
+# Serum max to account for different schedule + FC
+Ser.Max <- apply(ggdata[,6:10],1,max,na.rm=T)
+Ser.Base<-ggdata[,6]
+FC.Ser.Max<-Ser.Max/Ser.Base # FC from baseline
+# logFC.Ser<-log10(FC.Ser.Max)
+# Ser.data<-data.frame(Animal=1:30,Group=as.factor(ggdata$Group),logFC.Ser)
+
+# ocular max to account for different schedule + FC
+Ocu.Max <- apply(ggdata[,11:14], 1, max, na.rm=T)
+Ocu.Base <- ggdata[,11]
+FC.Ocu.Max <- Ocu.Max/Ocu.Base
+# logFC.Ocu <- log10(FC.Ocu.Max)
+# Ocu.data<-data.frame(Animal=1:30,Group=as.factor(ggdata$Group),logFC.Ocu)
+
+# Avidity index
+FC.AI<-data[,19]/data[,18]
+
+#Binary end points
+bin.clear<-data[,5]
+bin.clear[bin.clear<median(data[,5])]<-0
+bin.clear[bin.clear>median(data[,5])]<-1
+
+bin.IFU.D3<-data[,3]
+bin.IFU.D3[bin.IFU.D3<median(data[,3])]<-0
+bin.IFU.D3[bin.IFU.D3>median(data[,3])]<-1
+
+# Combine Ser.G.10 and Ser.G.18 and remove
+Ser.G.post3 <- c(ggdata$Ser.G.W18 [1:15], ggdata$Ser.G.W10 [16:30])
+ggdata <- ggdata[,-c(7:8)]
+
+
+# Final data frame --------------------------------------------------------
+
+# ggdata <- data
+ggdata <- cbind(ggdata, Ser.G.post3, Ser.Max, FC.Ser.Max, Ocu.Max, FC.Ocu.Max, FC.AI, bin.IFU.D3, bin.clear)
+d.names <- names(ggdata)
+
+#log10 transform
+#ggdata[,3:15] <- log10(ggdata[,3:15]) # problem with 0 becomes -Inf
+
+# Substitute with the half of the lowest
+zero <- ggdata
+zero[zero==0]<-max(zero,na.rm=T) # make all 0 to max
+ggdata.min <- apply(zero,2,min,na.rm=T) # make a vector of the min (which is not 0)
+
+for(i in 1:(dim(ggdata)[2]-2)){
+  ggdata[,i][ggdata[,i]==0]<-ggdata.min[i]/2 # substitute all 0 with ? min for the specific column (except the last two binary clear and IFU)
+}
+
+names(ggdata)
+ggdata[,3:12] <- log10(ggdata[,3:12]) # log10 transform IFU, clear, serum and ocular attributes
+# ggdata[,18] <- log10(ggdata[,18]) # log10 transform CD4
+#CD4 and CD8 are not log-transformed due to problems with negative values
+ggdata[,20:25] <- log10(ggdata[,20:25]) #log10 transform Max/FC and post3 attributes
+head(ggdata)
+
+#order columns
+ggdata <- ggdata[, -10] #remove Ocu.G.W18 due to NAs
+ggdata <- subset(ggdata, select=c(1:3, 25, 4:5, 26, 6, 19, 7:8, 20:21, 9:11, 22:23, 12:16, 24, 17:18))
+
+#subgrouping
+VG = subset(ggdata, Group!="6")
+CTH = ggdata[ggdata$Group %in% c("1", "2", "3") , ]
+DNA = ggdata[ggdata$Group %in% c("4", "5") , ]
+
+summary(VG)
+
