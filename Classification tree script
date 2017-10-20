@@ -1,0 +1,22 @@
+
+# Classification script ---------------------------------------------------
+#Load data from e.g. Data set script.R
+
+setwd('C:/Users/HBJU/Documents/R/02450Toolbox_R')
+source("Tools/source_tools.R")
+path = "Tools/"
+sourceDir(path, exceptions=c("source_tools.R"))
+
+library(rpart)
+# construct formula to fit automatically to avoid typing in each variable name
+attributeNames <- names(ggdata[,c(8:26)])
+(fmla <- as.formula(paste("bin.IFU.D3 ~", paste(attributeNames, collapse= "+"))))
+
+# fit classification tree
+# gini or information = entropy splitting criterion
+mytree <- rpart(fmla, data=VG, control=rpart.control(minsplit=1, minbucket=1, cp=0), parms=list(split='information'), method="class")
+
+par(xpd=NA)
+plot(mytree)
+text(mytree, pretty=0) # pretty = 0 makes attribute values show up as the numerical values they take in the data matrix X instead of encoding using a, b, c, etc.
+summary(mytree)
